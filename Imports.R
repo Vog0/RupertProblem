@@ -523,21 +523,22 @@ SolveRupert = function(Points, seed = NA, shrinkFaktor = 1,NrProjections=128, wa
 }
 
 PlotSolution <- function(Points,solution){
-  ### creates 2 plots of a solution to Rupert's problem
-  ### expects "solution" to be the list of parameters
+  ### creates 2 plots of a solution to the Rupert problem
+  ### expects "solution" to be the list of paramenters
   
   if (!is.matrix(Points)){stop("Expected Points to be a matrix")}
   if (nrow(Points)<4){stop("Points not of required shape")}
   if (ncol(Points)!=3){stop("Points not of required shape")}
   
-  ####################
-  #### first plot ####
-  ####################
-  
   P=Points%*%t(ProjectionMatrix(solution$ThetaPhiP[1],solution$ThetaPhiP[2]))
   P=RotatePoly(P,solution$alpha)
   P=TranslatePoly(P,solution$vector)
   Q=Points%*%t(ProjectionMatrix(solution$ThetaPhiQ[1],solution$ThetaPhiQ[2]))
+  
+  ####################
+  #### first plot ####
+  ####################
+  
   plot(Q[,1],Q[,2],type="n",xlab="",ylab="",asp=1,bty="n",axes = F)
   for (h in 1:nrow(Edges)){
     Edge=Edges[h,]
@@ -549,74 +550,56 @@ PlotSolution <- function(Points,solution){
   #### second plot ####
   #####################
   
-  ## tries to classify edges into visible and hidden edges
+  ## tries to classify vertices into visable and hidden vertices
+  ptsP=ClassifyPoints(P,Edges)
+  ptsQ=ClassifyPoints(Q,Edges)
   
-  hullIndecesP=chull(P)
-  if (length(hullIndecesP)==nrow(P)){
+  if ((length(ptsP$Hull)==nrow(P))|(length(ptsQ$Hull)==nrow(P))){
     ## all points are on the convex hull -> no special plot is possible with this method
     return()
   }
-  pivotP=(1:nrow(P))[-hullIndecesP][1]
-  PointsInFrontP=c(pivotP)
-  AnyChangesInRound=T
-  while(AnyChangesInRound){
-    AnyChangesInRound=F
-    
-    for (i in 1:nrow(Edges)){
-      for (j in 1:2){
-        v1=Edges[i,j]
-        v2=Edges[i,3-j]
-        ## test if v1 is in PointsInFront and v2 can be added
-        if (!any(PointsInFrontP==v1)){next} ## v1 not in PointsInFront
-        if (any(PointsInFrontP==v2)){next}  ## v2 already in PointsInFront
-        if (any(v2==hullIndecesP)){next}     ## v2 on hull
-        PointsInFrontP=c(PointsInFrontP,v2)
-        AnyChangesInRound=T
-      }
-    }
-  }
-  PointsInFrontP=c(PointsInFrontP,hullIndecesP)
   
-  ## part Q
-  hullIndecesQ=chull(Q)
-  if (length(hullIndecesQ)==nrow(Q)){
-    ## all points are on the convex hull -> no special plot is possible with this method
-    return()
-  }
-  pivotQ=(1:nrow(Q))[-hullIndecesQ][1]
   
-  PointsInFrontQ=c(pivotQ)
-  AnyChangesInRound=T
-  while(AnyChangesInRound){
-    AnyChangesInRound=F
-    
-    for (i in 1:nrow(Edges)){
-      for (j in 1:2){
-        v1=Edges[i,j]
-        v2=Edges[i,3-j]
-        ## test if v1 is in PointsInFront and v2 can be added
-        if (!any(PointsInFrontQ==v1)){next} ## v1 not in PointsInFront
-        if (any(PointsInFrontQ==v2)){next}  ## v2 already in PointsInFront
-        if (any(v2==hullIndecesQ)){next}     ## v2 on hull
-        PointsInFrontQ=c(PointsInFrontQ,v2)
-        AnyChangesInRound=T
-      }
-    }
-  }
-  PointsInFrontQ=c(PointsInFrontQ,hullIndecesQ)
-
   plot(Q[,1],Q[,2],type="n",xlab="",ylab="",asp=1,bty="n",axes = F)
-  for (h in 1:nrow(Edges)){
-    Edge=Edges[h,]
-    if ((any(Edge[1]==PointsInFrontP))&(any(Edge[2]==PointsInFrontP))){
-      points(P[Edge,1],P[Edge,2],type="l",lwd=2)
-    } else {
-      points(P[Edge,1],P[Edge,2],type="l",lty=2)
+  for (k in 2:1){
+    if (k==1){R=P;pts=ptsP;col="black"}
+    if (k==2){R=Q;pts=ptsQ;col="red"}
+    
+    EdgesVisible=rep(FALSE,nrow(Edges))
+    
+    ## Edge is Visible, if at least one of its endpoints is in Front:
+    for (h in 1:nrow(Edges)){
+      Edge=Edges[h,]
+      if ((any(Edge[1]==pts$Front))|(any(Edge[2]==pts$Front))){
+        EdgesVisible[h]=TRUE
+      }
     }
-    if ((any(Edge[1]==PointsInFrontQ))&(any(Edge[2]==PointsInFrontQ))){
-      points(Q[Edge,1],Q[Edge,2],type="l",col="red",lwd=2)
-    } else {
-      points(Q[Edge,1],Q[Edge,2],type="l",col="red",lty=2)
+    
+    ## Edge is Visible, if both endpoints are on Hull and does not intersect previous visible line:
+    for (h in which(!EdgesVisible)){
+      Edge=Edges[h,]
+      if ((any(Edge[1]==pts$Hull))&(any(Edge[2]==pts$Hull))){
+        ## both points on Hull
+        doesIntersectAnything =FALSE
+        A1=R[Edge[1],]
+        A2=R[Edge[2],]
+        for (hh in which(EdgesVisible)){
+          if (any(Edge==Edges[hh,1])|any(Edge==Edges[hh,2])){next}
+          B1=R[Edges[hh,1],]
+          B2=R[Edges[hh,2],]
+          if (twoLinesIntersect(A1,A2,B1,B2)){doesIntersectAnything=TRUE;break}
+        }
+        if (!doesIntersectAnything){EdgesVisible[h]=TRUE}
+      }
+    }
+    
+    for (h in 1:nrow(Edges)){
+      Edge=Edges[h,]
+      if (EdgesVisible[h]){
+        points(R[Edge,1],R[Edge,2],type="l",col=col,lwd=2)
+      } else {
+        points(R[Edge,1],R[Edge,2],type="l",col=col,lty=2)
+      }
     }
   }
 }
@@ -1109,6 +1092,72 @@ ProjectedOrigin<- function (P1,P2){
   
   t=-ScalarProduct(P1,P2-P1)/ScalarProduct(P2-P1,P2-P1)
   return(P1+t*(P2-P1))
+}
+
+twoLinesIntersect <- function(A1,A2,B1,B2){
+  ### returns True, if the lines A1A2 and B1B2 intersect
+  
+  ##Step 1: all Points will be translated, so that A1=(0,0)
+  vec=A1
+  A1=A1-vec
+  A2=A2-vec
+  B1=B1-vec
+  B2=B2-vec
+  
+  ## Step 2: all Points will be rotated, so that A2=(0,y) with y>0
+  phi=atan2(A2[2],A2[1])
+  A1=RotateVector(A1,-phi+pi/2)
+  A2=RotateVector(A2,-phi+pi/2)
+  B1=RotateVector(B1,-phi+pi/2)
+  B2=RotateVector(B2,-phi+pi/2)
+  
+  ## Step 3: The equation y=kx+d for the line passing B1 and B2 is calculated
+  k=(B2[2]-B1[2])/(B2[1]-B1[1])
+  d=B1[2]-k*B1[1]
+  
+  ## Step 4: Check if certain criteria are met
+  
+  if (B1[1]*B2[1]>0){return(FALSE)} ## B1 and B2 lie on the same side of the line x=0
+  
+  return((0<d)& (d<A2[2])) ## check if B1B2 crosses the y-axis on the right height
+}
+
+ClassifyPoints <- function(P,Edges){
+  ## given a projection of a polyhedra, it classifies its vertices to be either
+  ## .) on the convex hull
+  ## .) in the front -> visible
+  ## .) in the back -> not visible
+  
+  pts<- list()
+  pts$Hull=chull(P)
+  
+  if (length(pts$Hull)==nrow(P)){
+    ## all points are on the convex hull -> no special plot is possible with this method
+    return(pts)
+  }
+  pivotP=(1:nrow(P))[-pts$Hull][1]
+  pts$Front=c(pivotP)
+  AnyChangesInRound=T
+  while(AnyChangesInRound){
+    AnyChangesInRound=F
+    
+    for (i in 1:nrow(Edges)){
+      for (j in 1:2){
+        v1=Edges[i,j]
+        v2=Edges[i,3-j]
+        ## test if v1 is in pts$Front and v2 can be added
+        if (!any(pts$Front==v1)){next} ## v1 not in pts$Front
+        if (any(pts$Front==v2)){next}  ## v2 already in pts$Front
+        if (any(v2==pts$Hull)){next}     ## v2 on hull
+        pts$Front=c(pts$Front,v2)
+        AnyChangesInRound=T
+      }
+    }
+  }
+  
+  pts$Back=(1:nrow(P))[-c(pts$Hull,pts$Front)]
+  
+  return(pts)
 }
 
 mod2pi <- function(v){
